@@ -6,6 +6,12 @@ __pycache__/
 # C extensions
 *.so
 
+# Explicit 
+errors.log
+info.log
+settings.yaml
+*.json
+
 # Distribution / packaging
 .Python
 env/
