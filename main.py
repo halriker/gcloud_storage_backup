@@ -86,6 +86,18 @@ def create_transfer_client():
     return discovery.build('storagetransfer', 'v1')
 
 
+def upload_blob(bucket_name, source_file_name, destination_blob_name):
+    """Uploads a file to the bucket."""
+    storage_client = storage.Client.from_service_account_json(settings['gcloud']['key'])
+    bucket = storage_client.get_bucket(bucket_name)
+    blob = bucket.blob(settings['gcloud']['destination_blob_name'])
+
+    blob.upload_from_filename(source_file_name)
+
+    print('File {} uploaded to {}.'.format(
+        source_file_name,
+        destination_blob_name))
+
 if __name__ == '__main__':
 
     FILEPATH = os.getcwd() + r'\ffc_dbf'
@@ -121,13 +133,13 @@ if __name__ == '__main__':
     buckets = list(storage_client.list_buckets())
     logger.info(buckets)
 
-    credentials = GoogleCredentials.get_application_default()
+    # Upload an object to a bucket
+    source_file_name = settings['project']['testfile']
+    logger.info('test file for upload: ' + settings['project']['testfile'])
+    destination_blob_name = settings['gcloud']['destination_blob_name']
+    upload_blob(bucket_name, source_file_name, destination_blob_name)
 
-    service = discovery.build('storagetransfer', 'v1', credentials=credentials)
-    request = service.googleServiceAccounts().get(projectId=project_id)
-    response = request.execute()
-
-    # TODO: Change code below to process the `response` dict:
-    print(response)
+    buckets = list(storage_client.list_buckets())
+    logger.info(buckets)
 
 
