@@ -29,9 +29,9 @@ def setup_logging():
 def walktree(top, callback):
     ''' recursively descend the directory tree rooted at top,
        calling the callback function for each regular file '''
-
-    for f in os.listdir(top):
-        pathname = os.path.join(top, f)
+    files = []
+    for i in os.listdir(top):
+        pathname = os.path.join(top, i)
         mode = os.stat(pathname).st_mode
         if S_ISDIR(mode):
             # It's a directory, recurse into it
@@ -40,14 +40,15 @@ def walktree(top, callback):
             # It's a file, call the callback function
             fattrib = callback(pathname)
             if fattrib:
+                files.append(i)
                 logger.info('file attributes returned')
-                return fattrib
+                files.append(fattrib)
             else:
                 logger.info('the file does not have any attributes')
         else:
             # Unknown file type, print a message
             print 'Skipping %s' % pathname
-
+    return files
 
 def getfileattrib(path):
 
@@ -86,49 +87,63 @@ def create_transfer_client():
     return discovery.build('storagetransfer', 'v1')
 
 
-def upload_blob(bucket_name, source_file_name, destination_blob_name):
+def upload_blob(bn, sfn, dbn):
     """Uploads a file to the bucket."""
-    storage_client = storage.Client.from_service_account_json(settings['gcloud']['key'])
-    bucket = storage_client.get_bucket(bucket_name)
+    sc = storage.Client.from_service_account_json(settings['gcloud']['key'])
+    bucket = sc.get_bucket(bn)
     blob = bucket.blob(settings['gcloud']['destination_blob_name'])
 
-    blob.upload_from_filename(source_file_name)
+    blob.upload_from_filename(sfn)
 
     print('File {} uploaded to {}.'.format(
         source_file_name,
-        destination_blob_name))
+        dbn))
+
 
 if __name__ == '__main__':
 
-    FILEPATH = os.getcwd() + r'\ffc_dbf'
+    # Open settings file for gcloud and project settings
     with open("settings.yaml", "r") as f:
         settings = yaml.load(f)
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info('*** STARTING MEDGIS BACKUP SCRIPT ***')
     # List Settings
+    logger.info('SETTINGS CONFIG FILE: ')
+    logger.info(settings)
     # The ID of the Google Cloud Platform Console project that the Google service
     # account is associated with.
     logger.info('PROJECT_ID: ' + settings['gcloud']['project_id'])
-    logger.info('Checking Files in the Directory: ' + settings['project']['dirpath'])
-    # Search for files in directory and callback getfileattrib to get attributes
-    fa = walktree(FILEPATH, getfileattrib)
-    # store archive bit value
+    # Edit the dirpath in the setting.yaml file for the source files to be uploaded
+    logger.info('Checking Files in the Source Directory: ' + settings['project']['dirpath'])
+    # Search for files in dirpath directory and callback getfileattrib to get attributes
+    fa=[]
+    fa.append(walktree(settings['project']['dirpath'], getfileattrib))
+
+    # store archive bit value to determine if file has been backed up
+    # Note: File may have been backed up to tape and archive bit set
+
+   # Create Code to iterate list of dictionaries
     archive_attrib = fa.get('archive')
     if archive_attrib:
         logger.info('The Archive Attribute Value: ' + str(archive_attrib))
     else:
         logger.info('The Archive Attribute Value: ' + str(archive_attrib))
         logger.info('The file has already been backed up')
+        # Call ogglefileattribute()???? to force backup?
 
     # Instantiates a client
     storage_client = storage.Client.from_service_account_json(settings['gcloud']['key'])
-    # ADD test to determine if bucket already exists
-    # CREATE name using appended data and time?
+
+    #################################################################################
+    # 1. ADD test to determine if bucket already exists                                #
+    # 2. CREATE bucket name using appended data and time?                              #
+    #################################################################################
+
     # The name for the test bucket
-    bucket_name = settings['gcloud']['bucket_name']
+    test_bucket_name = settings['gcloud']['test_bucket_name']
     # Creates the new bucket
-    # bucket = storage_client.create_bucket(bucket_name)
+    # bucket = storage_client.create_bucket(test_bucket_name)
     # Make an authenticated API request
     buckets = list(storage_client.list_buckets())
     logger.info(buckets)
@@ -137,7 +152,7 @@ if __name__ == '__main__':
     source_file_name = settings['project']['testfile']
     logger.info('test file for upload: ' + settings['project']['testfile'])
     destination_blob_name = settings['gcloud']['destination_blob_name']
-    upload_blob(bucket_name, source_file_name, destination_blob_name)
+    upload_blob(test_bucket_name, source_file_name, destination_blob_name)
 
     buckets = list(storage_client.list_buckets())
     logger.info(buckets)
