@@ -9,6 +9,7 @@ import os
 from stat import *
 import win32file
 import datetime
+import time
 
 
 def setup_logging():
@@ -43,6 +44,9 @@ def walktree(top, callback):
                 logger.info('file attributes returned for file: ' + i)
                 fdict = {'filename': i}
                 fdict.update(fattrib)
+                logger.info('Creation Date: ' + fdict['createddate'])
+                logger.info('Creation Date: ' + fdict['modifieddate'])
+                logger.info('File Size (Bytes): ' + str(fdict['filesize']))
                 files.append(fdict)
             else:
                 logger.info('the file does not have any attributes')
@@ -59,6 +63,9 @@ def getfileattrib(path):
 
     # Get cumulative int value of attributes
     intAttributes = win32file.GetFileAttributes(path)
+    fsize = os.path.getsize(path)
+    ctime = time.ctime(os.path.getmtime(path))
+    mtime = time.ctime(os.path.getctime(path))
     # Assign individual attributes
     attributes['archive'] = (intAttributes & 32) == 32
     attributes['compressed'] = (intAttributes & 2048) == 2048
@@ -69,6 +76,9 @@ def getfileattrib(path):
     attributes['notIndexed'] = (intAttributes & 8192) == 8192
     attributes['offline'] = (intAttributes & 4096) == 4096
     attributes['readonly'] = (intAttributes & 1) == 1
+    attributes['filesize'] = fsize
+    attributes['createddate'] = ctime
+    attributes['modifieddate'] = mtime
 
     return attributes
 
@@ -120,6 +130,7 @@ if __name__ == '__main__':
 
     # List Existing Buckets
     buckets = list(storage_client.list_buckets())
+    logger.info('Buckets Pre-Backup:')
     logger.info(buckets)
 
     #####################################################################################
@@ -137,7 +148,7 @@ if __name__ == '__main__':
     # Upload files to the new bucket
     for x in fa:
         source_file_name = settings['project']['dirpath'] + x['filename']
-        logger.info('Uploading Source File: ' + source_file_name)
+        logger.info('[*] Uploading Source File: ' + source_file_name)
         destination_blob_name = x['filename']
         upload_blob(bucket_name, source_file_name, destination_blob_name)
 
