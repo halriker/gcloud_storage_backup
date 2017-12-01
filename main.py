@@ -5,12 +5,10 @@ import yaml
 # Imports the Google Cloud client library
 from google.cloud import storage
 from googleapiclient import discovery
-from oauth2client.client import GoogleCredentials
 import os
 from stat import *
-import win32api
-import win32con
 import win32file
+import datetime
 
 
 def setup_logging():
@@ -29,7 +27,9 @@ def setup_logging():
 def walktree(top, callback):
     ''' recursively descend the directory tree rooted at top,
        calling the callback function for each regular file '''
+    # list of dictionaries containing file attributes
     files = []
+
     for i in os.listdir(top):
         pathname = os.path.join(top, i)
         mode = os.stat(pathname).st_mode
@@ -40,15 +40,17 @@ def walktree(top, callback):
             # It's a file, call the callback function
             fattrib = callback(pathname)
             if fattrib:
-                files.append(i)
-                logger.info('file attributes returned')
-                files.append(fattrib)
+                logger.info('file attributes returned for file: ' + i)
+                fdict = {'filename': i}
+                fdict.update(fattrib)
+                files.append(fdict)
             else:
                 logger.info('the file does not have any attributes')
         else:
             # Unknown file type, print a message
             print 'Skipping %s' % pathname
     return files
+
 
 def getfileattrib(path):
 
@@ -70,18 +72,6 @@ def getfileattrib(path):
 
     return attributes
 
-# TOGGLE ARCHIVE BIT TO ALLOW FOR BACKUP
-# def togglefileattribute(filename, fileattribute, value):
-#      """Turn a specific file attribute on or off, leaving the other
-#      attributes intact.
-#      """
-#
-#      if value:
-#         bitvector |= fileattribute
-#      else:
-#          bitvector &= ~fileattribute
-#          win32file.SetFileAttributes(filename, bitvector)
-
 
 def create_transfer_client():
     return discovery.build('storagetransfer', 'v1')
@@ -90,9 +80,8 @@ def create_transfer_client():
 def upload_blob(bn, sfn, dbn):
     """Uploads a file to the bucket."""
     sc = storage.Client.from_service_account_json(settings['gcloud']['key'])
-    bucket = sc.get_bucket(bn)
-    blob = bucket.blob(settings['gcloud']['destination_blob_name'])
-
+    bucketup = sc.get_bucket(bn)
+    blob = bucketup.blob(dbn)
     blob.upload_from_filename(sfn)
 
     print('File {} uploaded to {}.'.format(
@@ -102,7 +91,7 @@ def upload_blob(bn, sfn, dbn):
 
 if __name__ == '__main__':
 
-    # Open settings file for gcloud and project settings
+    # Open/Load settings file for gcloud and project settings
     with open("settings.yaml", "r") as f:
         settings = yaml.load(f)
     setup_logging()
@@ -115,44 +104,42 @@ if __name__ == '__main__':
     # account is associated with.
     logger.info('PROJECT_ID: ' + settings['gcloud']['project_id'])
     # Edit the dirpath in the setting.yaml file for the source files to be uploaded
-    logger.info('Checking Files in the Source Directory: ' + settings['project']['dirpath'])
-    # Search for files in dirpath directory and callback getfileattrib to get attributes
-    fa=[]
-    fa.append(walktree(settings['project']['dirpath'], getfileattrib))
+    logger.info('Source Directory: ' + settings['project']['dirpath'])
 
-    # store archive bit value to determine if file has been backed up
-    # Note: File may have been backed up to tape and archive bit set
+    #################################################################################
+    # Get file attributes:                                                          #
+    # Note: The files in the source directory are constantly being modified.        #
+    #       Therefore, it is not necessary to determine which files need to be      #
+    #       backed up.                                                              #
+    #################################################################################
 
-   # Create Code to iterate list of dictionaries
-    archive_attrib = fa.get('archive')
-    if archive_attrib:
-        logger.info('The Archive Attribute Value: ' + str(archive_attrib))
-    else:
-        logger.info('The Archive Attribute Value: ' + str(archive_attrib))
-        logger.info('The file has already been backed up')
-        # Call ogglefileattribute()???? to force backup?
+    fa = (walktree(settings['project']['dirpath'], getfileattrib))
 
-    # Instantiates a client
+    # Instantiates a Google storage client
     storage_client = storage.Client.from_service_account_json(settings['gcloud']['key'])
 
-    #################################################################################
-    # 1. ADD test to determine if bucket already exists                                #
-    # 2. CREATE bucket name using appended data and time?                              #
-    #################################################################################
-
-    # The name for the test bucket
-    test_bucket_name = settings['gcloud']['test_bucket_name']
-    # Creates the new bucket
-    # bucket = storage_client.create_bucket(test_bucket_name)
-    # Make an authenticated API request
+    # List Existing Buckets
     buckets = list(storage_client.list_buckets())
     logger.info(buckets)
 
-    # Upload an object to a bucket
-    source_file_name = settings['project']['testfile']
-    logger.info('test file for upload: ' + settings['project']['testfile'])
-    destination_blob_name = settings['gcloud']['destination_blob_name']
-    upload_blob(test_bucket_name, source_file_name, destination_blob_name)
+    #####################################################################################
+    # 1. Create a bucket in the project. A new bucket will be created for each backup.  #                            #
+    # 2. The naming convention will be the Project ID + Date Time                       #
+    #####################################################################################
+
+    today = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    today = today.replace(':', '_')
+    today = today.replace(" ", "-")
+    bucket_name = settings['gcloud']['project_id'] + '-' + today
+    bucket = storage_client.create_bucket(bucket_name)
+    logger.info('[*] New Bucket Has Been Created: ' + bucket_name)
+
+    # Upload files to the new bucket
+    for x in fa:
+        source_file_name = settings['project']['dirpath'] + x['filename']
+        logger.info('Uploading Source File: ' + source_file_name)
+        destination_blob_name = x['filename']
+        upload_blob(bucket_name, source_file_name, destination_blob_name)
 
     buckets = list(storage_client.list_buckets())
     logger.info(buckets)
