@@ -10,6 +10,9 @@ from stat import *
 import win32file
 import datetime
 import time
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 
 def setup_logging():
@@ -99,6 +102,51 @@ def upload_blob(bn, sfn, dbn):
         dbn))
 
 
+def sendmail(bucketname, fn, cd, md, fs):
+    me = settings['smtp']['me']
+    you = settings['smtp']['you']
+
+    # Create message container - the correct MIME type is multipart/alternative.
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = settings['smtp']['subject']
+    msg['From'] = me
+    msg['To'] = you
+
+    # Create the body of the message (a plain-text and an HTML version).
+    text = "Alert!\nAlert: Actions Not Being Taken\n"
+    html = """\
+    <html>
+      <head></head>
+      <body>
+        <p>Medgis Google Storage Backup<br>
+           Bucket Name: """ + bucketname + """<br>
+           File Name: """ + fn + """<br>
+           File Created Date: """ + cd + """<br>
+           File Modified Date: """ + md + """<br>
+           File Size (Bytes): """ + fs + """<br>
+        </p>
+      </body>
+    </html>
+    """
+
+    # Record the MIME types of both parts - text/plain and text/html.
+    part1 = MIMEText(text, 'plain')
+    part2 = MIMEText(html, 'html')
+
+    # Attach parts into message container.
+    # According to RFC 2046, the last part of a multipart message, in this case
+    # the HTML message, is best and preferred.
+    msg.attach(part1)
+    msg.attach(part2)
+
+    # Send the message via local SMTP server.
+    s = smtplib.SMTP(settings['smtp']['server'])
+    # sendmail function takes 3 arguments: sender's address, recipient's address
+    # and message to send - here it is sent as one string.
+    s.sendmail(me, you, msg.as_string())
+    s.quit()
+
+
 if __name__ == '__main__':
 
     # Open/Load settings file for gcloud and project settings
@@ -145,14 +193,24 @@ if __name__ == '__main__':
     bucket = storage_client.create_bucket(bucket_name)
     logger.info('[*] New Bucket Has Been Created: ' + bucket_name)
 
-    # Upload files to the new bucket
+    # Upload files to the new bucket & Send E-Mail
     for x in fa:
         source_file_name = settings['project']['dirpath'] + x['filename']
         logger.info('[*] Uploading Source File: ' + source_file_name)
         destination_blob_name = x['filename']
         upload_blob(bucket_name, source_file_name, destination_blob_name)
+        # Send E-Mail Notification
+        logger.info('START SMTP PROCESS: ')
+        cd = x['createddate']
+        md = x['modifieddate']
+        fs = x['filesize']
+        fn = x['filename']
+        fs = str(fs)
+        sendmail(bucket_name, fn, cd, md, fs)
 
     buckets = list(storage_client.list_buckets())
     logger.info(buckets)
+    logger.info('*** END OF PROCESSING ***')
+
 
 
